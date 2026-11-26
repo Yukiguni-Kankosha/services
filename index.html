@@ -554,6 +554,9 @@
     </div>
   </div>
 
+  <!-- Dynamic Staff-Added Cards from Services_Content Sheet -->
+  <div id="dynamicServicesContainer"></div>
+
   <!-- Triage Quick Navigation -->
   <div class="triage-grid">
     <a href="https://yzwc.odekakemobi-sakurasan.com/?utm_source=yuzawa-kanko&utm_page=btn" class="triage-card triage-ai" target="_blank" rel="noopener noreferrer">
@@ -1675,6 +1678,35 @@
     : ([12, 1, 2, 3].includes(jstMonth) ? 'winter' : 'green');
 
   const cmsState = {}; // key -> { active: boolean, season: 'ALL'|'GREEN'|'WINTER' }
+  let dynamicCmsItems = []; // custom rows added in Services_Content not matching built-in data-i18n keys
+
+  function renderDynamicCmsItems() {
+    const container = document.getElementById('dynamicServicesContainer');
+    if (!container) return;
+    const visible = dynamicCmsItems.filter(item => {
+      if (!item.active) return false;
+      const ms = (item.season || 'ALL').toLowerCase();
+      return ms === 'all' || ms === currentSeason;
+    });
+    if (visible.length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    container.innerHTML = visible.map(item => {
+      const title = item.section || 'Info';
+      const body = item.texts[currentLang] || item.texts.en || item.texts.jp || '';
+      const linkHtml = item.linkUrl
+        ? `<div class="action-grid" style="margin-top:8px;"><a class="action-btn" href="${item.linkUrl}" target="_blank" rel="noopener noreferrer"><div><div class="btn-main">${title} ↗</div></div><span class="btn-icon">🔗</span></a></div>`
+        : '';
+      return `
+        <div class="section-card" style="border-color: rgba(56, 189, 248, 0.45);">
+          <div class="section-title"><span>📌</span><span>${title}</span></div>
+          <p class="section-desc" style="margin-bottom:0;">${body}</p>
+          ${linkHtml}
+        </div>
+      `;
+    }).join('');
+  }
 
   function applySeasonVisibility() {
     const btnGreen = document.getElementById('btnSeasonGreen');
@@ -1702,6 +1734,7 @@
         el.style.display = '';
       }
     });
+    renderDynamicCmsItems();
   }
 
   window.setSeason = function(season) {
@@ -1721,6 +1754,8 @@
           skipEmptyLines: 'greedy',
           transformHeader: h => h.trim().replace(/^\ufeff/, ''),
           complete: (results) => {
+            const builtInKeys = new Set(Array.from(document.querySelectorAll('[data-i18n]')).map(el => el.getAttribute('data-i18n')));
+            dynamicCmsItems = [];
             (results.data || []).forEach(r => {
               const key = (r.Key || '').trim();
               if (!key) return;
@@ -1729,12 +1764,29 @@
               const season = (r.Season || 'ALL').trim().toUpperCase();
               cmsState[key] = { active, season };
 
-              if (!I18N[key]) I18N[key] = {};
-              if (r.Text_EN) I18N[key].en = r.Text_EN.trim();
-              if (r.Text_JP) I18N[key].jp = r.Text_JP.trim();
-              if (r.Text_ZH_TR) I18N[key].zh_tr = r.Text_ZH_TR.trim();
-              if (r.Text_ZH_SI) I18N[key].zh_si = r.Text_ZH_SI.trim();
-              if (r.Text_KO) I18N[key].ko = r.Text_KO.trim();
+              const texts = {
+                en: (r.Text_EN || '').trim(),
+                jp: (r.Text_JP || '').trim(),
+                zh_tr: (r.Text_ZH_TR || '').trim(),
+                zh_si: (r.Text_ZH_SI || '').trim(),
+                ko: (r.Text_KO || '').trim()
+              };
+
+              if (builtInKeys.has(key)) {
+                if (!I18N[key]) I18N[key] = {};
+                Object.entries(texts).forEach(([langCode, val]) => {
+                  if (val) I18N[key][langCode] = val;
+                });
+              } else {
+                dynamicCmsItems.push({
+                  key,
+                  active,
+                  season,
+                  section: (r.Section || 'Info').trim(),
+                  texts,
+                  linkUrl: (r.Link_URL || '').trim()
+                });
+              }
             });
             applyLanguage(currentLang);
           }
